@@ -37,13 +37,20 @@ public class CensorshipService {
     }
 
     public Message processMessage(Message message) {
-        List<String> wordList = censoredWords.stream().map(Censorship::getWord).collect(Collectors.toList());
-        String lstr = wordList.toString();
-        String regex = lstr.substring(1, lstr.length() - 1).replace(", ", "|");
-        String text = (String) message.getContent();
-        text = text.replaceAll("\\b(" + regex + ")\\b", "***");
-        message.setContent(text);
+        if (message.getType().equals(Message.TYPE_TEXT)) {
+            message.setContent(censorText((String) message.getContent()));
+        }
         return message;
     }
+
+    public String censorText(String text) {
+        List<String> wordList = censoredWords.stream().map(Censorship::getWord).collect(Collectors.toList());
+        if (wordList.isEmpty()) return text;
+        String lstr = wordList.toString();
+        String regex = lstr.substring(1, lstr.length() - 1).replace(", ", "|");
+        text = text.replaceAll("\\b(" + regex + ")\\b", "***");
+        return text;
+    }
+
 
 }

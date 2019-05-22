@@ -8,7 +8,9 @@ import org.springframework.context.event.EventListener;
 import org.springframework.stereotype.Service;
 import websockets.Message;
 
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.stream.Collectors;
 
 @Service
@@ -17,21 +19,25 @@ public class CensorshipService {
     @Autowired
     private CensorhipRepository censorhipRepository;
 
-    private List<Censorship> censoredWords;
+    private Map<String, Censorship> censoredWords;
 
     public CensorshipService() {
+        this.censoredWords = new HashMap<>();
     }
 
     @EventListener(ApplicationReadyEvent.class)
     private void loadCensoredList() {
-        this.censoredWords = this.censorhipRepository.findAll();
+        this.censorhipRepository.findAll().forEach(word -> this.censoredWords.put(word.getWord(), word));
     }
 
     public boolean addWordCensored(String adminId, String word) {
         Censorship exist = this.censorhipRepository.findByWord(word);
-        if (exist != null) return false;
+        if (exist != null) {
+            this.censoredWords.putIfAbsent(exist.getWord(), exist);
+            return false;
+        }
         Censorship censoredWord = new Censorship(adminId, word);
-        this.censoredWords.add(censoredWord);
+        this.censoredWords.put(censoredWord.getWord(), censoredWord);
         this.censorhipRepository.save(censoredWord);
         return true;
     }
@@ -44,7 +50,8 @@ public class CensorshipService {
     }
 
     public String censorText(String text) {
-        List<String> wordList = censoredWords.stream().map(Censorship::getWord).collect(Collectors.toList());
+        if (censoredWords.isEmpty()) return text;
+        List<String> wordList = censoredWords.values().stream().map(Censorship::getWord).collect(Collectors.toList());
         if (wordList.isEmpty()) return text;
         String lstr = wordList.toString();
         String regex = lstr.substring(1, lstr.length() - 1).replace(", ", "|");

@@ -102,6 +102,12 @@ public class MessagingController {
                 this.template.convertAndSendToUser(principal.getName(), "/queue/reply", mg);
                 break;
 
+            case Message.TYPE_NOTIFICATION:
+            case Message.TYPE_FILE:
+            case Message.TYPE_TEXT:
+                addMessageToRoom(message); // -> Async
+                sendToFanoutBroker(message);
+                break;
             default: // By default, messages are send to consistency domain
                 sendToFanoutBroker(message);
                 break;
@@ -130,7 +136,6 @@ public class MessagingController {
                     User fromUser = usersRepository.findById(message.getFrom()).get();
                     if (!fromUser.getType().equals(User.SUPER)) break;
                 }
-                addMessageToRoom(message); // -> Async
                 Message censored = this.censorshipService.processMessage(message);
                 room.getMembers()
                         .forEach(user -> this.template.convertAndSendToUser(user.getId(), "/queue/reply", censored));

@@ -15,8 +15,8 @@ public class FileService {
     private MinioClient minioClient;
 
     public FileService() throws Exception {
-        this.minioClient = new MinioClient(URL, ACCESS_KEY, SECRET_KEY);
-        createBucket();
+        //this.minioClient = new MinioClient(URL, ACCESS_KEY, SECRET_KEY);
+        //createBucket();
     }
 
     private void createBucket() throws Exception {
@@ -37,10 +37,11 @@ public class FileService {
     }
 
     public UploadFileResponse uploadFile(MultipartFile file) throws Exception {
-        final String name = file.getOriginalFilename();
-        this.minioClient.putObject(BUCKET, name, file.getInputStream(), "application/octet-stream");
-        int index = file.getContentType().indexOf("/");
-        final String typeFile = file.getContentType().substring(0, index);
-        return new UploadFileResponse(name, URL + "/" + BUCKET + "/" + name, typeFile, file.getSize());
+        return new UploadFileResponse("Temporary files disabled", "", "notificaction", file.getSize());
+        //final String name = file.getOriginalFilename();
+        //this.minioClient.putObject(BUCKET, name, file.getInputStream(), "application/octet-stream");
+        //int index = file.getContentType().indexOf("/");
+        //final String typeFile = file.getContentType().substring(0, index);
+        //return new UploadFileResponse(name, URL + "/" + BUCKET + "/" + name, typeFile, file.getSize());
     }
 }

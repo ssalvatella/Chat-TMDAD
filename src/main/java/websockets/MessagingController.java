@@ -109,8 +109,14 @@ public class MessagingController {
                 sendToFanoutBroker(message);
                 adminService.registerMessageEntry(message); // -> Stats
                 break;
+
             case Message.TYPE_ADMIN:
-                if (adminService.isForStats(message)) break;
+                if (adminService.isForStats(message)) {
+                    Room adminRoom = this.roomsRepository.findById(message.getTo()).get();
+                    sendToWebSocket(message.getFrom(), new Message(Message.TYPE_NOTIFICATION, MessagingController.FROM_SYSTEM, adminRoom.getId(), "Asking for statistics..."));
+                    sendToFanoutBroker(new Message(Message.TYPE_STATS, message.getFrom(), message.getTo(), "Please, give me stats"));
+                }
+                break;
             default: // By default, messages are send to consistency domain
                 sendToFanoutBroker(message);
                 break;
@@ -186,9 +192,6 @@ public class MessagingController {
                         final List<String> commands = new ArrayList<>(Arrays.asList(((String) message.getContent()).split(" ")));
                         Message messageProcess = this.adminService.processCommand(message.getTo(), commands);
                         sendToWebSocket(message.getFrom(), messageProcess);
-                        if (adminService.isForStats(message)) {
-                            sendToFanoutBroker(new Message(Message.TYPE_STATS, message.getFrom(), message.getTo(), "Please, give me stats"));
-                        }
                     }
                     break;
 

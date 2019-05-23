@@ -75,7 +75,8 @@ public class AdminService {
         this.averageProcessTime = (messagesLastMinute != 0) ? totalProcessTimeLastMinute / messagesLastMinute : 0;
     }
 
-    public boolean isForStats(List<String> commands) {
+    public boolean isForStats(Message message) {
+        final List<String> commands = new ArrayList<>(Arrays.asList(((String) message.getContent()).split(" ")));
         Command command = Command.valueOf(commands.get(0));
         return command == Command.STATS;
     }

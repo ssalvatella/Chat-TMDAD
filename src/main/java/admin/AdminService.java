@@ -1,8 +1,14 @@
 package admin;
 
 import amqp.Application;
+import com.google.common.collect.HashMultiset;
+import com.google.common.collect.Iterables;
+import com.google.common.collect.Lists;
+import com.google.common.collect.Multiset;
 import com.sun.management.OperatingSystemMXBean;
 import lombok.Getter;
+import model.Room;
+import model.RoomRepository;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -29,6 +35,8 @@ public class AdminService {
 
     @Autowired
     private CensorshipService censorshipService;
+    @Autowired
+    private RoomRepository rooms;
 
     private Runtime runtime;
     private OperatingSystemMXBean operatingSystemMXBean;
@@ -64,17 +72,24 @@ public class AdminService {
             case STATS:
                 Message statsMessage = new Message(Message.TYPE_NOTIFICATION, MessagingController.FROM_SYSTEM, roomAdminId, "Asking for statistics...");
                 return statsMessage;
+
+            case TRENDS:
+                List<Multiset.Entry<String>> trends = calculateTrends();
+                StringBuilder strTrends = new StringBuilder("Trending topics: <br>");
+                trends.forEach(word -> strTrends.append(word.getElement() + " -> (" + word.getCount() + ") <br>"));
+                Message trendsMessage = new Message(Message.TYPE_NOTIFICATION, MessagingController.FROM_SYSTEM, roomAdminId, strTrends);
+                return trendsMessage;
         }
         return null;
     }
 
     public void registerMessageEntry(Message message) {
-        logger.info("Registering entry message" + message);
+        //logger.info("Registering entry message" + message);
         long entryTime = System.currentTimeMillis();
         long sizeObject = message.getContent().toString().getBytes().length;
         long[] stats = {entryTime, sizeObject, 0};
         this.statsMap.put(message.getTimestamp().toString(), stats);
-        logger.info(statsMap.toString());
+        //logger.info(statsMap.toString());
     }
 
     public void registerMessageExit(Message message) {
@@ -102,6 +117,17 @@ public class AdminService {
         return command == Command.STATS;
     }
 
+    public boolean isForTrends(Message message) {
+        final List<String> commands = new ArrayList<>(Arrays.asList(((String) message.getContent()).split(" ")));
+        Command command = null;
+        try {
+            command = Command.valueOf(commands.get(0));
+        } catch (IllegalArgumentException exception) {
+            return false;
+        }
+        return command == Command.TRENDS;
+    }
+
     public Message giveStats(String roomAdmin) {
         refreshStats();
         long memory = runtime.totalMemory() - runtime.freeMemory();
@@ -112,15 +138,59 @@ public class AdminService {
                 + " from " + Application.ipHost + "<br><br>"
                 + "Number of connected users: " + getConnectedUsers() + "<br>"
                 + "Messages on last minute: " + getMessagesLastMinute() + "<br>"
-                + "Processed bytes on last minute: " + getBytesLastMinute() + " Bytes<br>"
+                + "Processed bytes on last minute: " + format(getBytesLastMinute(), 2) + "<br>"
                 + "Average process time on last minute: " + getAverageProcessTime() + " ms<br>"
                 + "Used memory: " + format(memory, 2) + "<br>"
                 + "Free memory: " + format(runtime.freeMemory(), 2) + "<br>"
                 + "CPU: " + df.format(this.operatingSystemMXBean.getProcessCpuLoad()) + "<br>";
 
-
         return new Message(Message.TYPE_TEXT, MessagingController.FROM_SYSTEM, roomAdmin, text);
     }
+
+    public String giveCsvStats() {
+        refreshStats();
+        long memory = runtime.totalMemory() - runtime.freeMemory();
+
+        return Application.nameHost + "|"
+                + Application.ipHost + "|"
+                + getConnectedUsers() + "|"
+                + getMessagesLastMinute() + "|"
+                + format(getBytesLastMinute(), 2) + "|"
+                + getAverageProcessTime() + "|"
+                + format(memory, 2) + "|"
+                + format(runtime.freeMemory(), 2) + "|"
+                + this.operatingSystemMXBean.getProcessCpuLoad() + "\n";
+    }
+
+    private List<Multiset.Entry<String>> calculateTrends() {
+        List<Room> roomsList = rooms.findAll();
+        List<Message> totalMessages = new ArrayList<>();
+        roomsList.forEach(room -> {
+            totalMessages.addAll(room.getLastOneHourMessages());
+        });
+        StringBuilder globalText = new StringBuilder();
+        totalMessages.forEach(message -> {
+            globalText.append(message.getContent() + "\n");
+        });
+        Iterable<Multiset.Entry<String>> words = getMoreCommonsWords(globalText.toString().toLowerCase());
+        return Lists.newArrayList(words);
+    }
+
+    private Iterable<Multiset.Entry<String>> getMoreCommonsWords(String text) {
+        List<String> theWords = Arrays.asList(text.split("\\s+"));
+        Multiset<String> words = HashMultiset.create(theWords);
+
+        List<Multiset.Entry<String>> wordCounts = Lists.newArrayList(words.entrySet());
+        wordCounts.sort((left, right) -> {
+            // Note reversal of 'right' and 'left' to get descending order
+            return Integer.compare(right.getCount(), left.getCount());
+        });
+
+        Iterable<Multiset.Entry<String>> first10 = Iterables.limit(wordCounts, 10);
+
+        return first10;
+    }
+
 
     private void refreshStats() {
         long now = System.currentTimeMillis();
@@ -130,7 +200,6 @@ public class AdminService {
             Map.Entry pair = (Map.Entry) it.next();
             long entryTime = ((long[]) pair.getValue())[0];
             long elapsedTime = now - entryTime;
-            logger.info("Elpased time for message " + elapsedTime);
             if (elapsedTime > MEASURE_TIME) {
                 messagesLastMinute--;
                 bytesLastMinute -= ((long[]) pair.getValue())[1];
@@ -139,10 +208,7 @@ public class AdminService {
                 listToDelete.add((String) pair.getKey());
             }
         }
-
         listToDelete.forEach(key -> this.statsMap.remove(key));
-
-        logger.info(this.statsMap.toString());
     }
 
     @EventListener(SessionConnectEvent.class)
@@ -172,6 +238,6 @@ public class AdminService {
     }
 
     private enum Command {
-        CENSOR, STATS
+        CENSOR, STATS, TRENDS
     }
 }

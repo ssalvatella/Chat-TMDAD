@@ -5,8 +5,11 @@ import lombok.Getter;
 import lombok.ToString;
 import websockets.Message;
 
+import java.time.Instant;
 import java.util.ArrayList;
+import java.util.Date;
 import java.util.List;
+import java.util.concurrent.TimeUnit;
 import java.util.stream.Collectors;
 
 @Getter
@@ -39,6 +42,21 @@ public class Room {
         this.members = members;
         this.messages = new ArrayList<>();
 
+    }
+
+    public List<Message> getLastOneHourMessages() {
+        Date now = Date.from(Instant.now());
+        List<Message> messages = new ArrayList<>();
+        getMessages().forEach(message -> {
+            if (message.getType().equals(Message.TYPE_TEXT)) {
+                long diffInMillies = Math.abs(now.getTime() - message.getTimestamp().getTime());
+                long hours = TimeUnit.HOURS.convert(diffInMillies, TimeUnit.MILLISECONDS);
+                if (hours <= 1) {
+                    messages.add(message);
+                }
+            }
+        });
+        return messages;
     }
 
     public boolean addUsers(List<User> users) {

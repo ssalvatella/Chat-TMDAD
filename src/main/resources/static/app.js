@@ -433,6 +433,7 @@ $(document).ready(function () {
 
     if (user != null || user !== "") {
         connect(user);
+        document.title = "Chat - " + user;
     }
 
 });

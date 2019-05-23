@@ -111,10 +111,13 @@ public class MessagingController {
                 break;
 
             case Message.TYPE_ADMIN:
+                Room adminRoom = this.roomsRepository.findById(message.getTo()).get();
                 if (adminService.isForStats(message)) {
-                    Room adminRoom = this.roomsRepository.findById(message.getTo()).get();
                     sendToWebSocket(message.getFrom(), new Message(Message.TYPE_NOTIFICATION, MessagingController.FROM_SYSTEM, adminRoom.getId(), "Asking for statistics..."));
                     sendToFanoutBroker(new Message(Message.TYPE_STATS, message.getFrom(), message.getTo(), "Please, give me stats"));
+                } else if (adminService.isForTrends(message)) {
+                    final List<String> commands = new ArrayList<>(Arrays.asList(((String) message.getContent()).split(" ")));
+                    sendToWebSocket(message.getFrom(), this.adminService.processCommand(adminRoom.getId(), commands));
                 } else {
                     sendToFanoutBroker(message);
                 }

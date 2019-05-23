@@ -115,6 +115,8 @@ public class MessagingController {
                     Room adminRoom = this.roomsRepository.findById(message.getTo()).get();
                     sendToWebSocket(message.getFrom(), new Message(Message.TYPE_NOTIFICATION, MessagingController.FROM_SYSTEM, adminRoom.getId(), "Asking for statistics..."));
                     sendToFanoutBroker(new Message(Message.TYPE_STATS, message.getFrom(), message.getTo(), "Please, give me stats"));
+                } else {
+                    sendToFanoutBroker(message);
                 }
                 break;
             default: // By default, messages are send to consistency domain

@@ -1,14 +1,20 @@
 package admin;
 
 import amqp.Application;
+import com.sun.management.OperatingSystemMXBean;
 import lombok.Getter;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.context.event.EventListener;
 import org.springframework.stereotype.Service;
+import org.springframework.web.socket.messaging.SessionConnectEvent;
+import org.springframework.web.socket.messaging.SessionDisconnectEvent;
 import websockets.Message;
 import websockets.MessagingController;
 
+import java.lang.management.ManagementFactory;
+import java.text.DecimalFormat;
 import java.util.*;
 
 @Getter
@@ -24,18 +30,28 @@ public class AdminService {
     @Autowired
     private CensorshipService censorshipService;
 
+    private Runtime runtime;
+    private OperatingSystemMXBean operatingSystemMXBean;
+
     private int messagesLastMinute;
     private int bytesLastMinute;
     private long totalProcessTimeLastMinute;
     private long averageProcessTime;
+    private int connectedUsers;
 
     public AdminService() {
         this.statsMap = new HashMap<>();
+        this.runtime = Runtime.getRuntime();
+        this.operatingSystemMXBean = (OperatingSystemMXBean) ManagementFactory.getOperatingSystemMXBean();
     }
 
     public Message processCommand(String roomAdminId, List<String> commands) {
-        Command command = Command.valueOf(commands.get(0));
-        if (command == null) return getFailMessage(roomAdminId);
+        Command command = null;
+        try {
+            command = Command.valueOf(commands.get(0));
+        } catch (Exception e) {
+            return getFailMessage(roomAdminId);
+        }
         switch (command) {
             case CENSOR:
                 String firstParam = commands.get(1);
@@ -77,17 +93,31 @@ public class AdminService {
 
     public boolean isForStats(Message message) {
         final List<String> commands = new ArrayList<>(Arrays.asList(((String) message.getContent()).split(" ")));
-        Command command = Command.valueOf(commands.get(0));
+        Command command = null;
+        try {
+            command = Command.valueOf(commands.get(0));
+        } catch (IllegalArgumentException exception) {
+            return false;
+        }
         return command == Command.STATS;
     }
 
     public Message giveStats(String roomAdmin) {
         refreshStats();
+        long memory = runtime.totalMemory() - runtime.freeMemory();
+
+        DecimalFormat df = new DecimalFormat("##.##%");
+
         String text = Application.nameHost + "<br>"
                 + " from " + Application.ipHost + "<br><br>"
+                + "Number of connected users: " + getConnectedUsers() + "<br>"
                 + "Messages on last minute: " + getMessagesLastMinute() + "<br>"
                 + "Processed bytes on last minute: " + getBytesLastMinute() + " Bytes<br>"
-                + "Average process time on last minute: " + getAverageProcessTime() + " ms<br>";
+                + "Average process time on last minute: " + getAverageProcessTime() + " ms<br>"
+                + "Used memory: " + format(memory, 2) + "<br>"
+                + "Free memory: " + format(runtime.freeMemory(), 2) + "<br>"
+                + "CPU: " + df.format(this.operatingSystemMXBean.getProcessCpuLoad()) + "<br>";
+
 
         return new Message(Message.TYPE_TEXT, MessagingController.FROM_SYSTEM, roomAdmin, text);
     }
@@ -115,8 +145,30 @@ public class AdminService {
         logger.info(this.statsMap.toString());
     }
 
+    @EventListener(SessionConnectEvent.class)
+    public void handleWebsocketConnectListner(SessionConnectEvent event) {
+        this.connectedUsers++;
+    }
+
+    @EventListener(SessionDisconnectEvent.class)
+    public void handleWebsocketDisconnectListner(SessionDisconnectEvent event) {
+        this.connectedUsers--;
+    }
+
     private Message getFailMessage(String userId) {
         return new Message(Message.TYPE_NOTIFICATION, MessagingController.FROM_SYSTEM, userId, "Sorry. I don't understand you.");
+    }
+
+    private String format(double bytes, int digits) {
+        String[] dictionary = {"bytes", "KB", "MB", "GB", "TB", "PB", "EB", "ZB", "YB"};
+        int index = 0;
+        for (index = 0; index < dictionary.length; index++) {
+            if (bytes < 1024) {
+                break;
+            }
+            bytes = bytes / 1024;
+        }
+        return String.format("%." + digits + "f", bytes) + " " + dictionary[index];
     }
 
     private enum Command {

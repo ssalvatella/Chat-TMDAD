@@ -1,12 +1,18 @@
 package filestorage;
 
 import io.minio.MinioClient;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.boot.context.event.ApplicationReadyEvent;
+import org.springframework.context.event.EventListener;
 import org.springframework.stereotype.Service;
 import org.springframework.web.multipart.MultipartFile;
 
 @Service
 public class FileService {
+
+    private static final Logger logger = LoggerFactory.getLogger(FileService.class);
 
     private final String BUCKET = "files";
     @Value("${URL_MINIO:http://127.0.0.1:9000}")
@@ -15,15 +21,23 @@ public class FileService {
     private String ACCESS_KEY;
     @Value("${SECRET_MINIO:ZwctdyYFrpba7Pq9LHzI0+HW6Qam4x+4LhS0syR2}")
     private String SECRET_KEY;
-    @Value("${USE_FILE_SERVICE:0}")
+    @Value("${USE_FILE_SERVICE:1}")
     private int useFileService;
 
     private MinioClient minioClient;
 
-    public FileService() throws Exception {
+    public FileService() {
+
+    }
+
+    @EventListener(ApplicationReadyEvent.class)
+    private void connectToMinio() throws Exception {
         if (useFileService != 0) {
             this.minioClient = new MinioClient(URL, ACCESS_KEY, SECRET_KEY);
             createBucket();
+            logger.info("File Service started.");
+        } else {
+            logger.warn("File Service temporarily  disabled.");
         }
     }
 
@@ -52,7 +66,7 @@ public class FileService {
             final String typeFile = file.getContentType().substring(0, index);
             return new UploadFileResponse(name, URL + "/" + BUCKET + "/" + name, typeFile, file.getSize());
         } else {
-            return new UploadFileResponse("Temporary files disabled", "", "notificaction", file.getSize());
+            return new UploadFileResponse("File Service temporarily disabled.", "", "notificaction", file.getSize());
         }
 
     }

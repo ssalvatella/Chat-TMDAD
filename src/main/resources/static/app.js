@@ -42,6 +42,7 @@ function showMessage(message) {
         case TYPE_NOTIFICATION:
         case TYPE_FILE:
         case TYPE_TEXT:
+            spawnNotification(message);
             if (message.to === openChat)
                 addChatMessage(message);
             break;
@@ -72,6 +73,18 @@ function showMessage(message) {
         case TYPE_DROP_ROOM:
             dropRoom(message.content);
             break;
+    }
+}
+
+function spawnNotification(message) {
+    if (message.to === openChat) return;
+    let badge = $('#badge-' + message.to).text();
+    if (badge === '') {
+        $('#badge-' + message.to).text("1");
+    } else {
+        let count = parseInt(badge, 10);
+        count++;
+        $('#badge-' + message.to).text(count);
     }
 }
 
@@ -230,7 +243,7 @@ function appendRoom(room) {
         + '<span class="online_icon"></span>'
         + '</div>'
         + '<div class="user_info">'
-        + '<span>' + getNameFromRoom(room) + '</span>'
+        + '<span>' + getNameFromRoom(room) + ' <span id="badge-' + room.idRoom + '" class="badge badge-pill badge-success"></span></span>'
         + '<p>' + getNameFromRoom(room) + ' is online</p>'
         + '</div>'
         + '</div>'
@@ -281,6 +294,7 @@ function openRoom(room) {
     $('#' + openChat).removeClass("active");
     $('#chat_name').text(getNameFromRoom(room));
     $('#label_chat').text(room.membersRoom.join(', '));
+    $('#badge-' + room.idRoom).text('');
 
     $('#addUserSelect').empty();
     users.forEach(function (user) {

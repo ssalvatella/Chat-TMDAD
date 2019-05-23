@@ -30,12 +30,14 @@ import java.net.UnknownHostException;
 public class Application {
 
     public static final String fanoutExchangeName = "amq.fanout";
+    public static String ipHost;
+    public static String nameHost;
 
     private String queueName;
 
     public Application() throws UnknownHostException {
-        final String ipHost = InetAddress.getLocalHost().getHostAddress();
-        final String nameHost = InetAddress.getLocalHost().getHostName();
+        ipHost = InetAddress.getLocalHost().getHostAddress();
+        nameHost = InetAddress.getLocalHost().getHostName();
         queueName = ipHost + "-" + nameHost;
     }
 

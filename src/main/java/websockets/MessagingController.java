@@ -107,6 +107,7 @@ public class MessagingController {
             case Message.TYPE_TEXT:
                 addMessageToRoom(message); // -> Async
                 sendToFanoutBroker(message);
+                adminService.registerMessageEntry(message); // -> Stats
                 break;
             default: // By default, messages are send to consistency domain
                 sendToFanoutBroker(message);
@@ -127,61 +128,77 @@ public class MessagingController {
 
         logger.info("Received from RabbitMQ: " + message.toString());
 
-        switch (message.getType()) {
-            case Message.TYPE_NOTIFICATION:
-            case Message.TYPE_FILE:
-            case Message.TYPE_TEXT:
-                final Room room = roomsRepository.findById(message.getTo()).get();
-                if (room.getType().equals(Room.TYPE_SYSTEM)) {
-                    User fromUser = usersRepository.findById(message.getFrom()).get();
-                    if (!fromUser.getType().equals(User.SUPER)) break;
-                }
-                Message censored = this.censorshipService.processMessage(message);
-                room.getMembers()
-                        .forEach(user -> this.template.convertAndSendToUser(user.getId(), "/queue/reply", censored));
-                break;
+        try {
 
-            case Message.TYPE_CREATE_ROOM:
-                final LinkedHashMap map = (LinkedHashMap) message.getContent();
-                final String name = map.get("nameRoom").toString();
-                List<String> membersId = (List<String>) map.get("membersRoom");
-                membersId.add(message.getFrom());
-                final List<User> members = this.usersRepository.findByIdIn(membersId);
-                if (members.size() <= 1 || name.isEmpty()) break;
-                final String typeRoom = (members.size() > 2) ? Room.TYPE_GROUP : Room.TYPE_PRIVATE;
-                final Room newRoom = new Room(name, typeRoom, message.getFrom(), members);
-                this.roomsRepository.save(newRoom);
-                addRoomToUsers(newRoom);
-                notifyNewRoom(newRoom);
-                break;
+            switch (message.getType()) {
+                case Message.TYPE_NOTIFICATION:
+                case Message.TYPE_FILE:
+                case Message.TYPE_TEXT:
+                    final Room room = roomsRepository.findById(message.getTo()).get();
+                    if (room.getType().equals(Room.TYPE_SYSTEM)) {
+                        User fromUser = usersRepository.findById(message.getFrom()).get();
+                        if (!fromUser.getType().equals(User.SUPER)) break;
+                    }
+                    Message censored = this.censorshipService.processMessage(message);
+                    room.getMembers()
+                            .forEach(user -> this.template.convertAndSendToUser(user.getId(), "/queue/reply", censored));
+                    adminService.registerMessageExit(message); // -> Stats
+                    break;
 
-            case Message.TYPE_DROP_ROOM:
-                String roomToDrop = message.getTo();
-                String userId = message.getFrom();
-                if (this.securityService.checkRoomCreator(userId, roomToDrop)) {
-                    Room roomDropped = this.roomsRepository.findById(roomToDrop).get();
-                    dropRoomOnUsers(roomDropped);
-                    notifyDropRoom(roomDropped);
-                }
-                break;
+                case Message.TYPE_CREATE_ROOM:
+                    final LinkedHashMap map = (LinkedHashMap) message.getContent();
+                    final String name = map.get("nameRoom").toString();
+                    List<String> membersId = (List<String>) map.get("membersRoom");
+                    membersId.add(message.getFrom());
+                    final List<User> members = this.usersRepository.findByIdIn(membersId);
+                    if (members.size() <= 1 || name.isEmpty()) break;
+                    final String typeRoom = (members.size() > 2) ? Room.TYPE_GROUP : Room.TYPE_PRIVATE;
+                    final Room newRoom = new Room(name, typeRoom, message.getFrom(), members);
+                    this.roomsRepository.save(newRoom);
+                    addRoomToUsers(newRoom);
+                    notifyNewRoom(newRoom);
+                    break;
 
-            case Message.TYPE_INVITE_USER:
-                final Room roomToInvite = roomsRepository.findById(message.getTo()).get();
-                final LinkedHashMap mapContent = (LinkedHashMap) message.getContent();
-                final List<User> invitedUsers = this.usersRepository.findByIdIn((List<String>) mapContent.get("membersRoom"));
-                roomToInvite.addUsers(invitedUsers);
-                this.roomsRepository.save(roomToInvite);
-                addRoomToUsers(roomToInvite, invitedUsers);
-                notifyInvitedRoom(roomToInvite, invitedUsers);
-                break;
+                case Message.TYPE_DROP_ROOM:
+                    String roomToDrop = message.getTo();
+                    String userId = message.getFrom();
+                    if (this.securityService.checkRoomCreator(userId, roomToDrop)) {
+                        Room roomDropped = this.roomsRepository.findById(roomToDrop).get();
+                        dropRoomOnUsers(roomDropped);
+                        notifyDropRoom(roomDropped);
+                    }
+                    break;
 
-            case Message.TYPE_ADMIN:
-                if (this.securityService.checkAdminMessage(message.getFrom(), message)) {
-                    final List<String> commands = new ArrayList<>(Arrays.asList(((String) message.getContent()).split(" ")));
-                    sendToWebSocket(message.getFrom(), this.adminService.processCommand(message.getTo(), commands));
-                }
-                break;
+                case Message.TYPE_INVITE_USER:
+                    final Room roomToInvite = roomsRepository.findById(message.getTo()).get();
+                    final LinkedHashMap mapContent = (LinkedHashMap) message.getContent();
+                    final List<User> invitedUsers = this.usersRepository.findByIdIn((List<String>) mapContent.get("membersRoom"));
+                    roomToInvite.addUsers(invitedUsers);
+                    this.roomsRepository.save(roomToInvite);
+                    addRoomToUsers(roomToInvite, invitedUsers);
+                    notifyInvitedRoom(roomToInvite, invitedUsers);
+                    break;
 
+                case Message.TYPE_ADMIN:
+                    if (this.securityService.checkAdminMessage(message.getFrom(), message)) {
+                        final List<String> commands = new ArrayList<>(Arrays.asList(((String) message.getContent()).split(" ")));
+                        Message messageProcess = this.adminService.processCommand(message.getTo(), commands);
+                        sendToWebSocket(message.getFrom(), messageProcess);
+                        if (adminService.isForStats(commands)) {
+                            sendToFanoutBroker(new Message(Message.TYPE_STATS, message.getFrom(), message.getTo(), "Please, give me stats"));
+                        }
+                    }
+                    break;
+
+                case Message.TYPE_STATS:
+                    sendToFanoutBroker(adminService.giveStats(message.getTo()));
+                    break;
+
+            }
+        } catch (Exception exception) {
+            logger.error("Exception processing message.");
+            logger.error(exception.getMessage());
+            exception.printStackTrace();
         }
 
         return message;
@@ -193,12 +210,12 @@ public class MessagingController {
         addMessageToRoom(message); // -> Async
     }
 
-    private void sendToFanoutBroker(Message message) {
+    public void sendToFanoutBroker(Message message) {
+        message.setTimestamp(Date.from(Instant.now()));
         rabbitTemplate.convertAndSend(Application.fanoutExchangeName, "Don't care", message);
     }
 
     private void sendToWebSocket(String userId, Message message) {
-        message.setTimestamp(Date.from(Instant.now()));
         this.template.convertAndSendToUser(userId, "/queue/reply", message);
     }
 

@@ -23,6 +23,7 @@ public class Message implements Serializable {
     final public static String TYPE_INVITE_USER = "invite_user";
     final public static String TYPE_NOTIFICATION = "notification";
     final public static String TYPE_ADMIN = "admin";
+    final public static String TYPE_STATS = "stats";
 
     private String type;
     private String from;

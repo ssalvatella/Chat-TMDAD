@@ -2,6 +2,8 @@ package websockets;
 
 import model.User;
 import model.UserRepository;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.messaging.Message;
@@ -21,6 +23,8 @@ import org.springframework.web.socket.config.annotation.WebSocketMessageBrokerCo
 @Configuration
 @EnableWebSocketMessageBroker
 public class WebSocketConfig implements WebSocketMessageBrokerConfigurer {
+
+    private static final Logger logger = LoggerFactory.getLogger(WebSocketConfig.class);
 
     @Autowired
     private UserRepository userRepository;
@@ -48,7 +52,11 @@ public class WebSocketConfig implements WebSocketMessageBrokerConfigurer {
                 if (StompCommand.CONNECT.equals(accessor.getCommand())) {
                     final String userName = accessor.getFirstNativeHeader("user");
                     User user = userRepository.findByName(userName);
-                    System.out.println("Usuario " + userName + " conectado...");
+                    if (user == null) {
+                        logger.info("Invalid identification for " + userName);
+                        return message;
+                    }
+                    logger.info("Valid identification for " + userName);
 
                     final AnonymousAuthenticationToken auth = createAuthentication(user.getId());
                     accessor.setUser(auth);
